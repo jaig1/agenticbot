@@ -89,6 +89,10 @@ class SupervisorAgent:
         self.conversation_history = []
         self.request_count = 0
         
+        # Initialize clarification tracking
+        self.clarification_context = {}  # Stores active clarification sessions
+        self.max_clarification_rounds = 3
+        
         logger.info("Supervisor Agent initialized successfully")
     
     def _load_schema_context(self) -> str:
@@ -111,7 +115,7 @@ class SupervisorAgent:
         
         return context
     
-    def handle_query(self, user_query: str) -> Dict[str, Any]:
+    def handle_query(self, user_query: str, is_clarification_response: bool = False, clarification_key: str = None) -> Dict[str, Any]:
         """
         Main entry point for processing user queries.
         
@@ -119,6 +123,8 @@ class SupervisorAgent:
         
         Args:
             user_query: Natural language question from user
+            is_clarification_response: True if this is a response to a clarification question
+            clarification_key: Key to lookup clarification context (if is_clarification_response=True)
             
         Returns:
             Dict with: success, user_query, sql, results, formatted_response, metadata
@@ -127,13 +133,97 @@ class SupervisorAgent:
         
         logger.info(f"[Request {self.request_count}] User query: {user_query}")
         
+        # Handle clarification responses
+        clarification_history = None
+        clarification_round = 0
+        original_clarification_key = None
+        
+        if is_clarification_response and clarification_key and clarification_key in self.clarification_context:
+            # Retrieve clarification context using the key
+            context = self.clarification_context[clarification_key]
+            clarification_history = context["history"]
+            clarification_round = context["round"]
+            original_clarification_key = clarification_key
+            
+            logger.info(f"[Request {self.request_count}] Processing clarification round {clarification_round}")
+            logger.info(f"[Request {self.request_count}] User response: {user_query}")
+            
+            # Add user's response to the history
+            clarification_history[-1]["response"] = user_query
+            
+            # Check max rounds
+            if clarification_round >= self.max_clarification_rounds:
+                logger.warning(f"[Request {self.request_count}] Max clarification rounds reached")
+                
+                result = {
+                    "success": False,
+                    "user_query": user_query,
+                    "sql": None,
+                    "results": None,
+                    "response": f"I've asked for clarification {self.max_clarification_rounds} times but still need more information. Please try rephrasing your question with more specific details about what you want to see.",
+                    "formatted_response": None,
+                    "metadata": {
+                        "needs_clarification": False,
+                        "max_rounds_reached": True,
+                        "clarification_round": clarification_round
+                    }
+                }
+                
+                # Clear clarification context
+                del self.clarification_context[original_clarification_key]
+                
+                # Store in history
+                history_entry = {
+                    "request_number": self.request_count,
+                    "user_query": user_query,
+                    "success": False,
+                    "sql": None,
+                    "response": result["response"],
+                    "metadata": result["metadata"]
+                }
+                self.conversation_history.append(history_entry)
+                
+                return result
+        
         # Step 1: Query Planning - Validate and create execution plan
         logger.info(f"[Request {self.request_count}] Routing to Query Planner...")
-        planning_result = self.planner.plan_query(user_query, self.static_context)
+        planning_result = self.planner.plan_query(user_query, self.static_context, clarification_history)
         
         # Step 2: Check planning result
         if planning_result["status"] == "needs_clarification":
             logger.warning(f"[Request {self.request_count}] Query needs clarification")
+            
+            # Increment clarification round
+            new_round = clarification_round + 1
+            
+            # Determine clarification key
+            if original_clarification_key:
+                # Continue using the same key for follow-up clarifications
+                clarification_key_to_store = original_clarification_key
+            else:
+                # First clarification - use original query as key
+                clarification_key_to_store = user_query
+            
+            # Build history entry
+            if clarification_history is None:
+                # First clarification
+                clarification_history = [{
+                    "query": user_query,
+                    "clarification": planning_result["clarification_question"]
+                }]
+            else:
+                # Add new clarification to existing history
+                clarification_history.append({
+                    "query": user_query,
+                    "clarification": planning_result["clarification_question"]
+                })
+            
+            # Store context for next interaction
+            self.clarification_context[clarification_key_to_store] = {
+                "history": clarification_history,
+                "round": new_round,
+                "original_query": clarification_history[0]["query"]
+            }
             
             result = {
                 "success": False,
@@ -144,7 +234,10 @@ class SupervisorAgent:
                 "formatted_response": None,
                 "metadata": {
                     "needs_clarification": True,
-                    "planning_status": "needs_clarification"
+                    "planning_status": "needs_clarification",
+                    "clarification_round": new_round,
+                    "max_rounds": self.max_clarification_rounds,
+                    "clarification_key": clarification_key_to_store
                 }
             }
             
@@ -160,6 +253,10 @@ class SupervisorAgent:
             self.conversation_history.append(history_entry)
             
             return result
+        
+        # Clear clarification context if query is answerable
+        if original_clarification_key and original_clarification_key in self.clarification_context:
+            del self.clarification_context[original_clarification_key]
         
         # Step 3: Execute query (generate SQL + execute)
         logger.info(f"[Request {self.request_count}] Routing to Query Execution Agent...")
@@ -240,6 +337,39 @@ class SupervisorAgent:
         
         return result
     
+    def handle_clarification_response(self, clarification_key: str, user_response: str) -> Dict[str, Any]:
+        """
+        Handle user's response to a clarification question.
+        
+        This is a convenience method that wraps handle_query() with the clarification flag.
+        
+        Args:
+            clarification_key: The key used to store clarification context (usually the original query)
+            user_response: User's response to the clarification question
+            
+        Returns:
+            Dict with query result (may include another clarification or final result)
+        """
+        logger.info(f"Handling clarification response for key: {clarification_key}")
+        
+        # Verify clarification context exists
+        if clarification_key not in self.clarification_context:
+            logger.warning(f"No clarification context found for key: {clarification_key}")
+            return {
+                "success": False,
+                "user_query": user_response,
+                "sql": None,
+                "results": None,
+                "response": "I seem to have lost track of our conversation. Could you please rephrase your complete question?",
+                "formatted_response": None,
+                "metadata": {
+                    "error": "clarification_context_not_found"
+                }
+            }
+        
+        # Call handle_query with clarification flag
+        return self.handle_query(user_response, is_clarification_response=True, clarification_key=clarification_key)
+    
     def get_conversation_history(self) -> List[Dict[str, Any]]:
         """
         Get conversation history.
@@ -252,8 +382,9 @@ class SupervisorAgent:
     def clear_history(self):
         """Clear conversation history and reset request count."""
         self.conversation_history = []
+        self.clarification_context = {}
         self.request_count = 0
-        logger.info("Conversation history cleared")
+        logger.info("Conversation history and clarification context cleared")
     
     def get_stats(self) -> Dict[str, Any]:
         """

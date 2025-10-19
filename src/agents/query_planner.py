@@ -15,7 +15,7 @@ import os
 import sys
 import json
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from pathlib import Path
 
 # Add project root to path
@@ -71,13 +71,15 @@ class QueryPlanningAgent:
         
         logger.info(f"Query Planning Agent initialized with Vertex AI - Model: {self.model_name}")
     
-    def plan_query(self, user_query: str, schema_context: str) -> Dict[str, Any]:
+    def plan_query(self, user_query: str, schema_context: str, clarification_history: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """
         Analyze query with LLM and create execution plan.
         
         Args:
             user_query: Natural language question from user
             schema_context: Complete schema context string
+            clarification_history: Optional list of previous clarifications
+                Format: [{"query": "original", "clarification": "Q?", "response": "A"}]
             
         Returns:
             Dict with:
@@ -85,10 +87,13 @@ class QueryPlanningAgent:
             - plan: detailed execution plan (if answerable)
             - clarification_question: question for user (if needs clarification)
         """
-        logger.info(f"Planning query with LLM: {user_query}")
+        if clarification_history:
+            logger.info(f"Planning query with {len(clarification_history)} clarification(s): {user_query}")
+        else:
+            logger.info(f"Planning query with LLM: {user_query}")
         
         # Build prompt for LLM
-        prompt = self._build_planning_prompt(user_query, schema_context)
+        prompt = self._build_planning_prompt(user_query, schema_context, clarification_history)
         
         # Call Vertex AI
         try:
@@ -117,22 +122,37 @@ class QueryPlanningAgent:
                 "clarification_question": f"Unable to analyze query: {str(e)}"
             }
     
-    def _build_planning_prompt(self, user_query: str, schema_context: str) -> str:
+    def _build_planning_prompt(self, user_query: str, schema_context: str, clarification_history: Optional[List[Dict]] = None) -> str:
         """
         Build prompt for LLM to analyze query and create plan.
         
         Args:
             user_query: User's natural language question
             schema_context: Complete schema context
+            clarification_history: Optional conversation history for context
             
         Returns:
             Formatted prompt string
         """
+        # Build conversation history section if clarifications exist
+        history_section = ""
+        if clarification_history:
+            history_section = "\n\nCONVERSATION HISTORY:\n"
+            for idx, entry in enumerate(clarification_history, 1):
+                history_section += f"Round {idx}:\n"
+                history_section += f"  User asked: \"{entry['query']}\"\n"
+                if 'clarification' in entry:
+                    history_section += f"  System asked: \"{entry['clarification']}\"\n"
+                if 'response' in entry:
+                    history_section += f"  User clarified: \"{entry['response']}\"\n"
+            history_section += f"\nCurrent user input: \"{user_query}\"\n"
+            history_section += "\nIMPORTANT: Synthesize the complete user intent by merging the conversation history above. Understand what the user wants based on ALL the context, not just the latest message.\n"
+        
         prompt = f"""You are a query planning expert for BigQuery SQL. Analyze if the user's query can be answered with the available database schema.
 
 {schema_context}
-
-USER QUERY: "{user_query}"
+{history_section}
+{"USER QUERY: " + '"' + user_query + '"' if not clarification_history else ""}
 
 TASK:
 1. Determine if this query can be answered with the available tables and columns

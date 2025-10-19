@@ -56,6 +56,16 @@ def initialize_session_state():
             except Exception as e:
                 st.error(f"Failed to initialize: {e}")
                 st.session_state.initialized = False
+    
+    # Initialize clarification tracking
+    if "waiting_for_clarification" not in st.session_state:
+        st.session_state.waiting_for_clarification = False
+    
+    if "clarification_key" not in st.session_state:
+        st.session_state.clarification_key = None
+    
+    if "clarification_round" not in st.session_state:
+        st.session_state.clarification_round = 0
 
 
 def display_message(role: str, content: str, metadata: dict = None):
@@ -88,9 +98,31 @@ def display_message(role: str, content: str, metadata: dict = None):
             st.markdown(f"### {avatar}")
         
         with col2:
+            # Add clarification badge if in clarification mode
+            badge_html = ""
+            if role == "assistant" and metadata and metadata.get("needs_clarification"):
+                round_num = metadata.get("clarification_round", 1)
+                max_rounds = metadata.get("max_rounds", 3)
+                badge_html = f"""
+                <div style="
+                    display: inline-block;
+                    background-color: #ff9800;
+                    color: white;
+                    padding: 3px 10px;
+                    border-radius: 12px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    margin-bottom: 8px;
+                ">
+                    💬 Clarification Round {round_num}/{max_rounds}
+                </div>
+                <br>
+                """
+            
             # Custom styling for message box
             st.markdown(
                 f"""
+                {badge_html}
                 <div style="
                     background-color: {bg_color};
                     padding: 15px;
@@ -178,7 +210,16 @@ def process_query(user_query: str):
     # Process query with supervisor
     with st.spinner("Thinking..."):
         try:
-            result = st.session_state.supervisor.handle_query(user_query)
+            # Check if we're in clarification mode
+            if st.session_state.waiting_for_clarification and st.session_state.clarification_key:
+                # This is a response to a clarification question
+                result = st.session_state.supervisor.handle_clarification_response(
+                    st.session_state.clarification_key,
+                    user_query
+                )
+            else:
+                # Normal query processing
+                result = st.session_state.supervisor.handle_query(user_query)
             
             # Extract response
             if result["success"]:
@@ -197,6 +238,12 @@ def process_query(user_query: str):
                     "confidence_score": display_data.get("confidence_score"),
                     "results_data": display_data.get("results_data", [])
                 }
+                
+                # Clear clarification state on success
+                st.session_state.waiting_for_clarification = False
+                st.session_state.clarification_key = None
+                st.session_state.clarification_round = 0
+                
             else:
                 # Handle clarification or error
                 response_text = result["response"]
@@ -204,6 +251,19 @@ def process_query(user_query: str):
                     "success": False,
                     "needs_clarification": result["metadata"].get("needs_clarification", False)
                 }
+                
+                # Update clarification state
+                if result["metadata"].get("needs_clarification"):
+                    st.session_state.waiting_for_clarification = True
+                    st.session_state.clarification_key = result["metadata"].get("clarification_key")
+                    st.session_state.clarification_round = result["metadata"].get("clarification_round", 1)
+                    metadata["clarification_round"] = st.session_state.clarification_round
+                    metadata["max_rounds"] = result["metadata"].get("max_rounds", 3)
+                else:
+                    # Error or max rounds reached - clear clarification state
+                    st.session_state.waiting_for_clarification = False
+                    st.session_state.clarification_key = None
+                    st.session_state.clarification_round = 0
             
             # Add assistant message to chat
             st.session_state.messages.append({
@@ -217,6 +277,11 @@ def process_query(user_query: str):
             
         except Exception as e:
             error_message = f"{ERROR_GENERIC}\n\n**Error:** {str(e)}\n\n{ERROR_TIP}"
+            
+            # Clear clarification state on error
+            st.session_state.waiting_for_clarification = False
+            st.session_state.clarification_key = None
+            st.session_state.clarification_round = 0
             
             st.session_state.messages.append({
                 "role": "assistant",
@@ -241,22 +306,7 @@ def main():
         st.error("Failed to initialize the application. Please check your configuration.")
         return
     
-    # Display welcome message if no messages yet
-    if len(st.session_state.messages) == 0:
-        st.markdown(WELCOME_MESSAGE)
-    
-    # Display chat history
-    for message in st.session_state.messages:
-        display_message(
-            message["role"],
-            message["content"],
-            message.get("metadata")
-        )
-    
-    # Chat input at bottom
-    st.markdown("---")
-    
-    # Initialize tracking variables
+    # Initialize tracking variables for example dropdown
     if "process_example" not in st.session_state:
         st.session_state.process_example = False
     if "example_to_process" not in st.session_state:
@@ -273,23 +323,38 @@ def main():
         st.session_state.example_dropdown_key += 1
         st.rerun()
     
-    # Create dropdown with example queries
-    example_options = ["Select an example query..."] + EXAMPLE_QUERIES
+    # Display welcome message and example dropdown if no messages yet
+    if len(st.session_state.messages) == 0:
+        st.markdown(WELCOME_MESSAGE)
+        
+        # Example queries dropdown - static position below welcome message
+        example_options = ["Select an example query..."] + EXAMPLE_QUERIES
+        
+        selected = st.selectbox(
+            label="Choose an example to run instantly:",
+            options=example_options,
+            index=0,  # Always default to first option
+            key=f"example_selector_{st.session_state.example_dropdown_key}",  # Unique key forces reset
+            label_visibility="collapsed"
+        )
+        
+        # Detect when user selects a new example
+        if selected != "Select an example query...":
+            # Mark for processing on next rerun
+            st.session_state.example_to_process = selected
+            st.session_state.process_example = True
+            st.rerun()
     
-    selected = st.selectbox(
-        label="Choose an example to run instantly:",
-        options=example_options,
-        index=0,  # Always default to first option
-        key=f"example_selector_{st.session_state.example_dropdown_key}",  # Unique key forces reset
-        label_visibility="collapsed"
-    )
+    # Display chat history
+    for message in st.session_state.messages:
+        display_message(
+            message["role"],
+            message["content"],
+            message.get("metadata")
+        )
     
-    # Detect when user selects a new example
-    if selected != "Select an example query...":
-        # Mark for processing on next rerun
-        st.session_state.example_to_process = selected
-        st.session_state.process_example = True
-        st.rerun()
+    # Chat input at bottom
+    st.markdown("---")
     
     # Create input form with compact button below, right-aligned
     with st.form(key="query_form", clear_on_submit=True):
