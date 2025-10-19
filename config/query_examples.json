@@ -1,0 +1,310 @@
+{
+  "metadata": {
+    "total_queries": 23,
+    "database": "insurance_analytics",
+    "project_id": "gen-lang-client-0454606702",
+    "generated_from_schema": "config/schema.json"
+  },
+  "queries": [
+    {
+      "id": 1,
+      "user_query": "How many agents records do we have?",
+      "expected_sql": "SELECT COUNT(*) as total_count FROM `gen-lang-client-0454606702.insurance_analytics.insurance_agents`",
+      "expected_result_type": "single_value",
+      "description": "Count all records in insurance_agents table",
+      "difficulty": "easy",
+      "tags": [
+        "count",
+        "basic"
+      ]
+    },
+    {
+      "id": 2,
+      "user_query": "How many unique claim status values are there?",
+      "expected_sql": "SELECT COUNT(DISTINCT claim_status) as unique_count FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims`",
+      "expected_result_type": "single_value",
+      "description": "Count distinct values in claim_status",
+      "difficulty": "easy",
+      "tags": [
+        "count",
+        "distinct"
+      ]
+    },
+    {
+      "id": 3,
+      "user_query": "How many claims records from the last 30 days?",
+      "expected_sql": "SELECT COUNT(*) as recent_count FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims` WHERE claim_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)",
+      "expected_result_type": "single_value",
+      "description": "Count records from last 30 days using partition-optimized query",
+      "difficulty": "medium",
+      "tags": [
+        "count",
+        "date_filter",
+        "partition_optimized"
+      ]
+    },
+    {
+      "id": 4,
+      "user_query": "Show me the count of records by claim status",
+      "expected_sql": "SELECT claim_status, COUNT(*) as count FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims` GROUP BY claim_status ORDER BY count DESC",
+      "expected_result_type": "table",
+      "description": "Count records grouped by claim_status",
+      "difficulty": "medium",
+      "tags": [
+        "count",
+        "group_by",
+        "aggregation"
+      ]
+    },
+    {
+      "id": 5,
+      "user_query": "Count recent claims records by claim status",
+      "expected_sql": "SELECT claim_status, COUNT(*) as count FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims` WHERE claim_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) GROUP BY claim_status ORDER BY count DESC",
+      "expected_result_type": "table",
+      "description": "Count with multiple conditions: date filter and grouping",
+      "difficulty": "medium",
+      "tags": [
+        "count",
+        "multiple_conditions",
+        "group_by",
+        "date_filter"
+      ]
+    },
+    {
+      "id": 6,
+      "user_query": "Show me some sample agents records",
+      "expected_sql": "SELECT * FROM `gen-lang-client-0454606702.insurance_analytics.insurance_agents` LIMIT 10",
+      "expected_result_type": "table",
+      "description": "Select all columns with limit",
+      "difficulty": "easy",
+      "tags": [
+        "select",
+        "basic",
+        "limit"
+      ]
+    },
+    {
+      "id": 7,
+      "user_query": "Show me agent id, name, email from agents",
+      "expected_sql": "SELECT agent_id, name, email FROM `gen-lang-client-0454606702.insurance_analytics.insurance_agents` LIMIT 100",
+      "expected_result_type": "table",
+      "description": "Select specific columns",
+      "difficulty": "easy",
+      "tags": [
+        "select",
+        "specific_columns"
+      ]
+    },
+    {
+      "id": 8,
+      "user_query": "Show me all claims where claim status is active",
+      "expected_sql": "SELECT * FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims` WHERE claim_status = 'active' LIMIT 100",
+      "expected_result_type": "table",
+      "description": "Select with WHERE condition",
+      "difficulty": "easy",
+      "tags": [
+        "select",
+        "where",
+        "filter"
+      ]
+    },
+    {
+      "id": 9,
+      "user_query": "Show me agents sorted by agent id",
+      "expected_sql": "SELECT * FROM `gen-lang-client-0454606702.insurance_analytics.insurance_agents` ORDER BY agent_id DESC LIMIT 50",
+      "expected_result_type": "table",
+      "description": "Select with ORDER BY",
+      "difficulty": "easy",
+      "tags": [
+        "select",
+        "order_by",
+        "sort"
+      ]
+    },
+    {
+      "id": 10,
+      "user_query": "Show recent claims records that are active",
+      "expected_sql": "SELECT * FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims` WHERE claim_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) AND claim_status = 'active' LIMIT 100",
+      "expected_result_type": "table",
+      "description": "Select with multiple WHERE conditions",
+      "difficulty": "medium",
+      "tags": [
+        "select",
+        "where",
+        "multiple_conditions",
+        "date_filter"
+      ]
+    },
+    {
+      "id": 11,
+      "user_query": "Show me claims from last month",
+      "expected_sql": "SELECT * FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims` WHERE claim_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH) LIMIT 100",
+      "expected_result_type": "table",
+      "description": "Records from last month using DATE_SUB",
+      "difficulty": "medium",
+      "tags": [
+        "date_filter",
+        "relative_date",
+        "partition_optimized"
+      ]
+    },
+    {
+      "id": 12,
+      "user_query": "What claims do we have from this year?",
+      "expected_sql": "SELECT * FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims` WHERE EXTRACT(YEAR FROM claim_date) = EXTRACT(YEAR FROM CURRENT_DATE()) LIMIT 100",
+      "expected_result_type": "table",
+      "description": "Records from current year using EXTRACT",
+      "difficulty": "medium",
+      "tags": [
+        "date_filter",
+        "extract",
+        "year"
+      ]
+    },
+    {
+      "id": 13,
+      "user_query": "Show claims between January and March 2024",
+      "expected_sql": "SELECT * FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims` WHERE claim_date BETWEEN '2024-01-01' AND '2024-03-31' LIMIT 100",
+      "expected_result_type": "table",
+      "description": "Records between specific date range",
+      "difficulty": "medium",
+      "tags": [
+        "date_filter",
+        "between",
+        "date_range"
+      ]
+    },
+    {
+      "id": 14,
+      "user_query": "Show me claims from the last 7 days",
+      "expected_sql": "SELECT * FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims` WHERE claim_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY) ORDER BY claim_date DESC LIMIT 100",
+      "expected_result_type": "table",
+      "description": "Recent records with partition optimization",
+      "difficulty": "medium",
+      "tags": [
+        "date_filter",
+        "recent",
+        "partition_optimized"
+      ]
+    },
+    {
+      "id": 15,
+      "user_query": "How many claims per month this year?",
+      "expected_sql": "SELECT DATE_TRUNC(claim_date, MONTH) as month, COUNT(*) as count FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims` WHERE EXTRACT(YEAR FROM claim_date) = EXTRACT(YEAR FROM CURRENT_DATE()) GROUP BY month ORDER BY month",
+      "expected_result_type": "table",
+      "description": "Group by month for current year",
+      "difficulty": "hard",
+      "tags": [
+        "date_filter",
+        "group_by",
+        "date_trunc",
+        "aggregation"
+      ]
+    },
+    {
+      "id": 16,
+      "user_query": "What is the total agent id?",
+      "expected_sql": "SELECT SUM(agent_id) as total_agent_id FROM `gen-lang-client-0454606702.insurance_analytics.insurance_agents`",
+      "expected_result_type": "single_value",
+      "description": "Sum of agent_id",
+      "difficulty": "easy",
+      "tags": [
+        "aggregation",
+        "sum"
+      ]
+    },
+    {
+      "id": 17,
+      "user_query": "What is the average agent id?",
+      "expected_sql": "SELECT AVG(agent_id) as avg_agent_id FROM `gen-lang-client-0454606702.insurance_analytics.insurance_agents`",
+      "expected_result_type": "single_value",
+      "description": "Average of agent_id",
+      "difficulty": "easy",
+      "tags": [
+        "aggregation",
+        "average"
+      ]
+    },
+    {
+      "id": 18,
+      "user_query": "What are the minimum and maximum agent id values?",
+      "expected_sql": "SELECT MIN(agent_id) as min_agent_id, MAX(agent_id) as max_agent_id FROM `gen-lang-client-0454606702.insurance_analytics.insurance_agents`",
+      "expected_result_type": "single_row",
+      "description": "Min and max values",
+      "difficulty": "easy",
+      "tags": [
+        "aggregation",
+        "min",
+        "max"
+      ]
+    },
+    {
+      "id": 19,
+      "user_query": "Show me policies with their customers information",
+      "expected_sql": "SELECT t1.policy_id, t1.policy_number, t1.customer_id, t2.customer_id, t2.name FROM `gen-lang-client-0454606702.insurance_analytics.insurance_policies` t1 INNER JOIN `gen-lang-client-0454606702.insurance_analytics.insurance_customers` t2 ON t1.customer_id = t2.id LIMIT 100",
+      "expected_result_type": "table",
+      "description": "Inner join between insurance_policies and insurance_customers",
+      "difficulty": "medium",
+      "tags": [
+        "join",
+        "inner_join",
+        "two_tables"
+      ]
+    },
+    {
+      "id": 20,
+      "user_query": "How many policies does each customers have?",
+      "expected_sql": "SELECT t2.customer_id, COUNT(*) as count FROM `gen-lang-client-0454606702.insurance_analytics.insurance_policies` t1 INNER JOIN `gen-lang-client-0454606702.insurance_analytics.insurance_customers` t2 ON t1.customer_id = t2.id GROUP BY t2.customer_id ORDER BY count DESC",
+      "expected_result_type": "table",
+      "description": "Count with join and grouping",
+      "difficulty": "hard",
+      "tags": [
+        "join",
+        "aggregation",
+        "group_by"
+      ]
+    },
+    {
+      "id": 21,
+      "user_query": "Show me policies with their customers and agents details",
+      "expected_sql": "SELECT t1.*, t2.name as customers_name, t3.name as agents_name FROM `gen-lang-client-0454606702.insurance_analytics.insurance_policies` t1 INNER JOIN `gen-lang-client-0454606702.insurance_analytics.insurance_customers` t2 ON t1.customer_id = t2.id INNER JOIN `gen-lang-client-0454606702.insurance_analytics.insurance_agents` t3 ON t1.agent_id = t3.id LIMIT 100",
+      "expected_result_type": "table",
+      "description": "Three-table join with multiple relationships",
+      "difficulty": "hard",
+      "tags": [
+        "join",
+        "inner_join",
+        "multi_table",
+        "complex"
+      ]
+    },
+    {
+      "id": 22,
+      "user_query": "Show all policies including those without customers",
+      "expected_sql": "SELECT t1.*, t2.name FROM `gen-lang-client-0454606702.insurance_analytics.insurance_policies` t1 LEFT JOIN `gen-lang-client-0454606702.insurance_analytics.insurance_customers` t2 ON t1.customer_id = t2.id LIMIT 100",
+      "expected_result_type": "table",
+      "description": "Left join to include all records from insurance_policies",
+      "difficulty": "medium",
+      "tags": [
+        "join",
+        "left_join",
+        "outer_join"
+      ]
+    },
+    {
+      "id": 23,
+      "user_query": "Show me total policy id by customers for last 90 days",
+      "expected_sql": "SELECT t2.customer_id, SUM(t1.policy_id) as total_policy_id, COUNT(*) as count FROM `gen-lang-client-0454606702.insurance_analytics.insurance_policies` t1 INNER JOIN `gen-lang-client-0454606702.insurance_analytics.insurance_customers` t2 ON t1.customer_id = t2.id WHERE t1.start_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) GROUP BY t2.customer_id ORDER BY total_policy_id DESC",
+      "expected_result_type": "table",
+      "description": "Complex join with date filter and aggregation",
+      "difficulty": "hard",
+      "tags": [
+        "join",
+        "aggregation",
+        "date_filter",
+        "group_by",
+        "complex"
+      ]
+    }
+  ]
+}

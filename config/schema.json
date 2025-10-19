@@ -1,0 +1,512 @@
+{
+  "business_glossary": {
+    "discovered_entities": {
+      "address": [],
+      "agents": [],
+      "claim_amount": [],
+      "claim_number": [],
+      "claim_status": [],
+      "claims": [],
+      "customers": [],
+      "date_of_birth": [],
+      "description": [],
+      "email": [],
+      "name": [],
+      "phone": [],
+      "policies": [],
+      "policy_number": [],
+      "policy_type": [],
+      "premium_amount": [],
+      "status": []
+    },
+    "phrases": {
+      "active": "has activity in last 90 days",
+      "approved": "verified and accepted",
+      "pending": "not yet processed or approved",
+      "recent": "last 30 days"
+    },
+    "terms": {
+      "agent": [
+        "broker",
+        "representative",
+        "salesperson"
+      ],
+      "claim": [
+        "claims",
+        "incident",
+        "loss",
+        "damage"
+      ],
+      "customer": [
+        "client",
+        "buyer",
+        "user",
+        "account",
+        "policyholder"
+      ],
+      "date": [
+        "time",
+        "timestamp",
+        "when",
+        "period"
+      ],
+      "order": [
+        "purchase",
+        "transaction",
+        "sale"
+      ],
+      "policy": [
+        "policies",
+        "contract",
+        "coverage",
+        "plan"
+      ],
+      "product": [
+        "item",
+        "sku",
+        "merchandise",
+        "policy"
+      ],
+      "revenue": [
+        "sales",
+        "income",
+        "amount",
+        "total",
+        "premium"
+      ],
+      "status": [
+        "state",
+        "condition",
+        "stage"
+      ]
+    }
+  },
+  "database": "insurance_analytics",
+  "database_type": "bigquery",
+  "project_id": "gen-lang-client-0454606702",
+  "relationships": [
+    {
+      "description": "Each insurance_policies references a insurance_customers",
+      "from": "insurance_policies.customer_id",
+      "to": "insurance_customers.id",
+      "type": "many-to-one"
+    },
+    {
+      "description": "Each insurance_customers can have multiple insurance_policies records",
+      "from": "insurance_customers.id",
+      "to": "insurance_policies.customer_id",
+      "type": "one-to-many"
+    },
+    {
+      "description": "Each insurance_policies references a insurance_agents",
+      "from": "insurance_policies.agent_id",
+      "to": "insurance_agents.id",
+      "type": "many-to-one"
+    },
+    {
+      "description": "Each insurance_agents can have multiple insurance_policies records",
+      "from": "insurance_agents.id",
+      "to": "insurance_policies.agent_id",
+      "type": "one-to-many"
+    }
+  ],
+  "tables": [
+    {
+      "clustering": [
+        "name"
+      ],
+      "columns": [
+        {
+          "description": "",
+          "name": "agent_id",
+          "nullable": false,
+          "primary_key": false,
+          "type": "INT64"
+        },
+        {
+          "description": "",
+          "name": "name",
+          "nullable": false,
+          "primary_key": false,
+          "type": "STRING"
+        },
+        {
+          "description": "",
+          "name": "email",
+          "nullable": true,
+          "primary_key": false,
+          "type": "STRING"
+        },
+        {
+          "description": "",
+          "name": "phone",
+          "nullable": true,
+          "primary_key": false,
+          "type": "STRING"
+        }
+      ],
+      "description": "",
+      "name": "insurance_agents",
+      "sample_data": [
+        {
+          "agent_id": 1,
+          "email": "john.smith@insurance.com",
+          "name": "John Smith",
+          "phone": "555-0101"
+        },
+        {
+          "agent_id": 1,
+          "email": "john.smith@insurance.com",
+          "name": "John Smith",
+          "phone": "555-0101"
+        },
+        {
+          "agent_id": 1,
+          "email": "john.smith@insurance.com",
+          "name": "John Smith",
+          "phone": "555-0101"
+        },
+        {
+          "agent_id": 1,
+          "email": "john.smith@insurance.com",
+          "name": "John Smith",
+          "phone": "555-0101"
+        },
+        {
+          "agent_id": 2,
+          "email": "sarah.johnson@insurance.com",
+          "name": "Sarah Johnson",
+          "phone": "555-0102"
+        }
+      ]
+    },
+    {
+      "clustering": [
+        "claim_status"
+      ],
+      "columns": [
+        {
+          "description": "",
+          "name": "claim_id",
+          "nullable": false,
+          "primary_key": false,
+          "type": "INT64"
+        },
+        {
+          "description": "",
+          "name": "claim_number",
+          "nullable": false,
+          "primary_key": false,
+          "type": "STRING"
+        },
+        {
+          "description": "",
+          "name": "policy_id",
+          "nullable": false,
+          "primary_key": false,
+          "type": "INT64"
+        },
+        {
+          "description": "",
+          "name": "claim_date",
+          "nullable": false,
+          "primary_key": false,
+          "type": "DATE"
+        },
+        {
+          "description": "",
+          "name": "claim_amount",
+          "nullable": false,
+          "primary_key": false,
+          "type": "NUMERIC"
+        },
+        {
+          "description": "",
+          "name": "claim_status",
+          "nullable": false,
+          "primary_key": false,
+          "type": "STRING"
+        },
+        {
+          "description": "",
+          "name": "description",
+          "nullable": true,
+          "primary_key": false,
+          "type": "STRING"
+        }
+      ],
+      "description": "",
+      "name": "insurance_claims",
+      "sample_data": [
+        {
+          "claim_amount": 65000.0,
+          "claim_date": "2024-07-20",
+          "claim_id": 10,
+          "claim_number": "CLM-2024-010",
+          "claim_status": "Pending",
+          "description": "Vandalism - extensive property damage",
+          "policy_id": 32
+        },
+        {
+          "claim_amount": 65000.0,
+          "claim_date": "2024-07-20",
+          "claim_id": 10,
+          "claim_number": "CLM-2024-010",
+          "claim_status": "Pending",
+          "description": "Vandalism - extensive property damage",
+          "policy_id": 32
+        },
+        {
+          "claim_amount": 65000.0,
+          "claim_date": "2024-07-20",
+          "claim_id": 10,
+          "claim_number": "CLM-2024-010",
+          "claim_status": "Pending",
+          "description": "Vandalism - extensive property damage",
+          "policy_id": 32
+        },
+        {
+          "claim_amount": 3500.0,
+          "claim_date": "2024-06-15",
+          "claim_id": 1,
+          "claim_number": "CLM-2024-001",
+          "claim_status": "Approved",
+          "description": "Minor collision repair - windshield and bumper",
+          "policy_id": 1
+        },
+        {
+          "claim_amount": 3500.0,
+          "claim_date": "2024-06-15",
+          "claim_id": 1,
+          "claim_number": "CLM-2024-001",
+          "claim_status": "Approved",
+          "description": "Minor collision repair - windshield and bumper",
+          "policy_id": 1
+        }
+      ]
+    },
+    {
+      "clustering": [
+        "name"
+      ],
+      "columns": [
+        {
+          "description": "",
+          "name": "customer_id",
+          "nullable": false,
+          "primary_key": false,
+          "type": "INT64"
+        },
+        {
+          "description": "",
+          "name": "name",
+          "nullable": false,
+          "primary_key": false,
+          "type": "STRING"
+        },
+        {
+          "description": "",
+          "name": "email",
+          "nullable": true,
+          "primary_key": false,
+          "type": "STRING"
+        },
+        {
+          "description": "",
+          "name": "phone",
+          "nullable": true,
+          "primary_key": false,
+          "type": "STRING"
+        },
+        {
+          "description": "",
+          "name": "address",
+          "nullable": true,
+          "primary_key": false,
+          "type": "STRING"
+        },
+        {
+          "description": "",
+          "name": "date_of_birth",
+          "nullable": true,
+          "primary_key": false,
+          "type": "DATE"
+        }
+      ],
+      "description": "",
+      "name": "insurance_customers",
+      "sample_data": [
+        {
+          "address": "123 Unknown St, Springfield",
+          "customer_id": 11,
+          "date_of_birth": "1986-03-20",
+          "email": null,
+          "name": "Kevin Brown",
+          "phone": "555-1011"
+        },
+        {
+          "address": "123 Unknown St, Springfield",
+          "customer_id": 11,
+          "date_of_birth": "1986-03-20",
+          "email": null,
+          "name": "Kevin Brown",
+          "phone": "555-1011"
+        },
+        {
+          "address": "123 Unknown St, Springfield",
+          "customer_id": 11,
+          "date_of_birth": "1986-03-20",
+          "email": null,
+          "name": "Kevin Brown",
+          "phone": "555-1011"
+        },
+        {
+          "address": "123 Unknown St, Springfield",
+          "customer_id": 11,
+          "date_of_birth": "1986-03-20",
+          "email": null,
+          "name": "Kevin Brown",
+          "phone": "555-1011"
+        },
+        {
+          "address": "234 Incomplete St, Springfield",
+          "customer_id": 15,
+          "date_of_birth": "1983-11-30",
+          "email": null,
+          "name": "Nancy Wilson",
+          "phone": null
+        }
+      ]
+    },
+    {
+      "clustering": [
+        "policy_type",
+        "status"
+      ],
+      "columns": [
+        {
+          "description": "",
+          "name": "policy_id",
+          "nullable": false,
+          "primary_key": false,
+          "type": "INT64"
+        },
+        {
+          "description": "",
+          "name": "policy_number",
+          "nullable": false,
+          "primary_key": false,
+          "type": "STRING"
+        },
+        {
+          "description": "",
+          "name": "customer_id",
+          "nullable": false,
+          "primary_key": false,
+          "type": "INT64"
+        },
+        {
+          "description": "",
+          "name": "agent_id",
+          "nullable": false,
+          "primary_key": false,
+          "type": "INT64"
+        },
+        {
+          "description": "",
+          "name": "policy_type",
+          "nullable": false,
+          "primary_key": false,
+          "type": "STRING"
+        },
+        {
+          "description": "",
+          "name": "premium_amount",
+          "nullable": false,
+          "primary_key": false,
+          "type": "NUMERIC"
+        },
+        {
+          "description": "",
+          "name": "start_date",
+          "nullable": false,
+          "primary_key": false,
+          "type": "DATE"
+        },
+        {
+          "description": "",
+          "name": "end_date",
+          "nullable": false,
+          "primary_key": false,
+          "type": "DATE"
+        },
+        {
+          "description": "",
+          "name": "status",
+          "nullable": false,
+          "primary_key": false,
+          "type": "STRING"
+        }
+      ],
+      "description": "",
+      "name": "insurance_policies",
+      "sample_data": [
+        {
+          "agent_id": 3,
+          "customer_id": 3,
+          "end_date": "2025-03-19",
+          "policy_id": 13,
+          "policy_number": "POL-2024-013",
+          "policy_type": "Auto",
+          "premium_amount": 7500.0,
+          "start_date": "2024-03-20",
+          "status": "Active"
+        },
+        {
+          "agent_id": 3,
+          "customer_id": 3,
+          "end_date": "2025-03-19",
+          "policy_id": 13,
+          "policy_number": "POL-2024-013",
+          "policy_type": "Auto",
+          "premium_amount": 7500.0,
+          "start_date": "2024-03-20",
+          "status": "Active"
+        },
+        {
+          "agent_id": 3,
+          "customer_id": 3,
+          "end_date": "2025-03-19",
+          "policy_id": 13,
+          "policy_number": "POL-2024-013",
+          "policy_type": "Auto",
+          "premium_amount": 7500.0,
+          "start_date": "2024-03-20",
+          "status": "Active"
+        },
+        {
+          "agent_id": 1,
+          "customer_id": 3,
+          "end_date": "2025-02-28",
+          "policy_id": 3,
+          "policy_number": "POL-2024-003",
+          "policy_type": "Home",
+          "premium_amount": 1500.0,
+          "start_date": "2024-03-01",
+          "status": "Active"
+        },
+        {
+          "agent_id": 1,
+          "customer_id": 3,
+          "end_date": "2025-02-28",
+          "policy_id": 3,
+          "policy_number": "POL-2024-003",
+          "policy_type": "Home",
+          "premium_amount": 1500.0,
+          "start_date": "2024-03-01",
+          "status": "Active"
+        }
+      ]
+    }
+  ]
+}
