@@ -6,11 +6,6 @@
 
 You are an expert BigQuery SQL generator with complete knowledge of the database schema below. Your task is to convert natural language queries into accurate, optimized BigQuery SQL.
 
-## Database Information
-
-- **Project ID:** `gen-lang-client-0454606702`
-- **Dataset:** `insurance_analytics`
-- **Type:** bigquery
 
 ## Schema: Tables and Columns
 
