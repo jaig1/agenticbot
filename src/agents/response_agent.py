@@ -16,6 +16,7 @@ import sys
 import logging
 import json
 from typing import Dict, List, Any
+from pathlib import Path
 from dotenv import load_dotenv
 import vertexai
 from vertexai.generative_models import GenerativeModel
@@ -34,6 +35,9 @@ class ResponseAgent:
     This agent takes raw SQL query results and transforms them into natural
     language explanations that are easy to understand for business users.
     """
+    
+    # Path to external prompt template
+    PROMPT_FILE = Path(__file__).parent.parent.parent / "prompt" / "response_agent_prompt.txt"
     
     def __init__(self):
         """
@@ -58,6 +62,10 @@ class ResponseAgent:
         # Initialize Vertex AI
         vertexai.init(project=self.project_id, location=self.location)
         self.model = GenerativeModel(self.model_name)
+        
+        # Validate and cache prompt template
+        self._validate_prompt_file()
+        self._prompt_template = self._load_prompt_template()
         
         logger.info("Response Agent initialized")
     
@@ -151,6 +159,30 @@ class ResponseAgent:
             "results_data": results
         }
     
+    def _validate_prompt_file(self):
+        """
+        Validate that the prompt template file exists.
+        Fails fast at initialization if template is missing.
+        """
+        if not self.PROMPT_FILE.exists():
+            raise FileNotFoundError(
+                f"Prompt template not found: {self.PROMPT_FILE}\n"
+                f"Please ensure the prompt file exists in the correct location."
+            )
+    
+    def _load_prompt_template(self) -> str:
+        """
+        Load the response formatting prompt template from file.
+        Called once at initialization and cached in memory.
+        
+        Returns:
+            Prompt template string with placeholders
+        """
+        try:
+            return self.PROMPT_FILE.read_text()
+        except Exception as e:
+            raise RuntimeError(f"Failed to load prompt template: {e}")
+    
     def _format_with_llm(self, user_query: str, sql: str, results: List[Dict[str, Any]], 
                          metadata: Dict[str, Any]) -> str:
         """
@@ -168,39 +200,15 @@ class ResponseAgent:
         # Limit results for prompt (first 10 rows)
         sample_results = results[:10]
         
-        # Build prompt
-        prompt = f"""You are a data analyst explaining query results to a business user in clear, professional English.
-
-USER ASKED: "{user_query}"
-
-SQL EXECUTED:
-{sql}
-
-RESULTS (showing first {len(sample_results)} of {metadata.get('row_count', len(results))} total):
-{json.dumps(sample_results, indent=2, default=str)}
-
-METADATA:
-- Total rows returned: {metadata.get('row_count', len(results))}
-- Execution time: {metadata.get('execution_time_seconds', 0)}s
-
-TASK:
-Create a clear, conversational explanation that includes:
-
-1. DIRECT ANSWER: Start with a direct answer to the user's question
-2. KEY FINDINGS: Highlight the most important results (top items, notable patterns)
-3. EXPLANATION: Briefly explain how you arrived at this answer (what data was analyzed, what operations were performed)
-4. CONTEXT: Mention relevant context (how many records, date ranges if applicable)
-
-GUIDELINES:
-- Write in clear, natural English as if talking to a business colleague
-- Be concise but informative (3-5 paragraphs maximum)
-- Format numbers appropriately (use commas, currency symbols where relevant)
-- Use proper paragraph breaks for readability
-- Don't use technical jargon unless necessary
-- Be professional but conversational
-- Don't mention SQL or technical implementation details unless very relevant
-
-Generate the response:"""
+        # Format the cached prompt template with current values
+        prompt = self._prompt_template.format(
+            user_query=user_query,
+            sql=sql,
+            sample_results=json.dumps(sample_results, indent=2, default=str),
+            total_rows=metadata.get('row_count', len(results)),
+            sample_count=len(sample_results),
+            execution_time=metadata.get('execution_time_seconds', 0)
+        )
         
         try:
             response = self.model.generate_content(prompt)
@@ -487,16 +495,35 @@ Generate the response:"""
         print("Response Agent - Internal Tests")
         print("="*80 + "\n")
         
+        # Load schema context for tests
+        schema_path = "config/systemcontext.md"
+        with open(schema_path, 'r') as f:
+            system_context = f.read()
+        
+        print(f"Schema loaded: {len(system_context)} chars\n")
+        
         # Test cases
         test_cases = [
             {
                 "user_query": "How many insurance customers do we have?",
+                "execution_plan": {
+                    "intent": "Count total insurance customers",
+                    "tables_needed": ["insurance_customers"],
+                    "operations": {"aggregation": {"function": "COUNT"}},
+                    "confidence": 0.95
+                },
                 "sql": "SELECT COUNT(*) as customer_count FROM `gen-lang-client-0454606702.insurance_analytics.insurance_customers`",
                 "results": [{"customer_count": 60}],
-                "metadata": {"row_count": 1, "execution_time_seconds": 0.15}
+                "metadata": {"row_count": 1, "execution_time_seconds": 0.15, "bytes_processed": 1024}
             },
             {
                 "user_query": "Show me top 5 customers by total premium amount",
+                "execution_plan": {
+                    "intent": "Retrieve top customers by premium amount",
+                    "tables_needed": ["customers", "policies"],
+                    "operations": {"aggregation": {"function": "SUM"}, "sorting": "DESC", "limit": 5},
+                    "confidence": 0.90
+                },
                 "sql": "SELECT c.customer_name, SUM(p.premium_amount) as total_premium FROM customers c JOIN policies p ON c.id = p.customer_id GROUP BY c.customer_name ORDER BY total_premium DESC LIMIT 5",
                 "results": [
                     {"customer_name": "John Doe", "total_premium": 50000},
@@ -505,13 +532,19 @@ Generate the response:"""
                     {"customer_name": "Alice Brown", "total_premium": 35000},
                     {"customer_name": "Charlie Davis", "total_premium": 30000}
                 ],
-                "metadata": {"row_count": 5, "execution_time_seconds": 0.45}
+                "metadata": {"row_count": 5, "execution_time_seconds": 0.45, "bytes_processed": 2048}
             },
             {
                 "user_query": "What is the total claim amount?",
+                "execution_plan": {
+                    "intent": "Calculate total claim amounts",
+                    "tables_needed": ["insurance_claims"],
+                    "operations": {"aggregation": {"function": "SUM", "column": "claim_amount"}},
+                    "confidence": 0.98
+                },
                 "sql": "SELECT SUM(claim_amount) as total_claims FROM `gen-lang-client-0454606702.insurance_analytics.insurance_claims`",
                 "results": [{"total_claims": 1696950}],
-                "metadata": {"row_count": 1, "execution_time_seconds": 0.12}
+                "metadata": {"row_count": 1, "execution_time_seconds": 0.12, "bytes_processed": 512}
             }
         ]
         
@@ -519,17 +552,21 @@ Generate the response:"""
             print(f"Test {i}: {test['user_query']}")
             print("-" * 80)
             
-            formatted = self.format_response(
-                test['user_query'],
-                test['sql'],
-                test['results'],
-                test['metadata']
+            response = self.format_response(
+                user_query=test['user_query'],
+                system_context=system_context,
+                execution_plan=test['execution_plan'],
+                sql=test['sql'],
+                results=test['results'],
+                metadata=test['metadata']
             )
             
-            print(f"Summary: {formatted['summary']}")
-            print(f"\nFormatted Response:")
-            print(formatted['formatted_response'])
-            print(f"\nMethodology: {formatted['methodology']}")
+            print(f"Formatted Response:")
+            print(response['formatted_response'])
+            print(f"\nExplanation: {response['explanation'][:200]}...")
+            print(f"Execution Time: {response['execution_time']}")
+            print(f"Row Count: {response['row_count']}")
+            print(f"Confidence: {response['confidence_score']}")
             print()
         
         print("="*80)

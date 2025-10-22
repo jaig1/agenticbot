@@ -44,6 +44,9 @@ class QueryPlanningAgent:
     - What clarifications are needed if query is ambiguous?
     """
     
+    # Prompt template file location
+    PROMPT_FILE = Path(__file__).parent.parent.parent / "prompt" / "query_planner_prompt.txt"
+    
     def __init__(self):
         """
         Initialize Query Planning Agent with Vertex AI.
@@ -69,7 +72,26 @@ class QueryPlanningAgent:
         vertexai.init(project=self.project_id, location=self.location)
         self.model = GenerativeModel(self.model_name)
         
+        # Validate and cache prompt template
+        self._validate_prompt_file()
+        self._prompt_template = self._load_prompt_template()
+        
         logger.info(f"Query Planning Agent initialized with Vertex AI - Model: {self.model_name}")
+    
+    def _validate_prompt_file(self) -> None:
+        """Validate that prompt file exists at startup"""
+        if not self.PROMPT_FILE.exists():
+            raise FileNotFoundError(
+                f"Query Planner prompt not found: {self.PROMPT_FILE}\n"
+                f"Expected location: prompt/query_planner_prompt.txt"
+            )
+    
+    def _load_prompt_template(self) -> str:
+        """Load the prompt template from file (called once at init)"""
+        try:
+            return self.PROMPT_FILE.read_text(encoding='utf-8')
+        except Exception as e:
+            raise RuntimeError(f"Failed to load prompt template: {e}")
     
     def plan_query(self, user_query: str, schema_context: str, clarification_history: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """
@@ -122,6 +144,38 @@ class QueryPlanningAgent:
                 "clarification_question": f"Unable to analyze query: {str(e)}"
             }
     
+    def _build_history_section(self, clarification_history: List[Dict], current_input: str) -> str:
+        """
+        Build conversation history section as a formatted string.
+        
+        Args:
+            clarification_history: List of conversation entries
+            current_input: Current user input
+            
+        Returns:
+            Formatted history string or empty string if no history
+        """
+        if not clarification_history:
+            return ""
+        
+        history_text = "\n\nCONVERSATION HISTORY:\n"
+        
+        for idx, entry in enumerate(clarification_history, 1):
+            history_text += f"Round {idx}:\n"
+            history_text += f"  User asked: \"{entry['query']}\"\n"
+            
+            if 'clarification' in entry:
+                history_text += f"  System asked: \"{entry['clarification']}\"\n"
+            
+            if 'response' in entry:
+                history_text += f"  User clarified: \"{entry['response']}\"\n"
+        
+        history_text += f"\nCurrent user input: \"{current_input}\"\n"
+        history_text += "\nIMPORTANT: Synthesize the complete user intent by merging the conversation history above. "
+        history_text += "Understand what the user wants based on ALL the context, not just the latest message.\n"
+        
+        return history_text
+    
     def _build_planning_prompt(self, user_query: str, schema_context: str, clarification_history: Optional[List[Dict]] = None) -> str:
         """
         Build prompt for LLM to analyze query and create plan.
@@ -134,63 +188,17 @@ class QueryPlanningAgent:
         Returns:
             Formatted prompt string
         """
-        # Build conversation history section if clarifications exist
+        # Build history section (empty string if no history)
         history_section = ""
         if clarification_history:
-            history_section = "\n\nCONVERSATION HISTORY:\n"
-            for idx, entry in enumerate(clarification_history, 1):
-                history_section += f"Round {idx}:\n"
-                history_section += f"  User asked: \"{entry['query']}\"\n"
-                if 'clarification' in entry:
-                    history_section += f"  System asked: \"{entry['clarification']}\"\n"
-                if 'response' in entry:
-                    history_section += f"  User clarified: \"{entry['response']}\"\n"
-            history_section += f"\nCurrent user input: \"{user_query}\"\n"
-            history_section += "\nIMPORTANT: Synthesize the complete user intent by merging the conversation history above. Understand what the user wants based on ALL the context, not just the latest message.\n"
+            history_section = self._build_history_section(clarification_history, user_query)
         
-        prompt = f"""You are a query planning expert for BigQuery SQL. Analyze if the user's query can be answered with the available database schema.
-
-{schema_context}
-{history_section}
-{"USER QUERY: " + '"' + user_query + '"' if not clarification_history else ""}
-
-TASK:
-1. Determine if this query can be answered with the available tables and columns
-2. If YES: Create a detailed execution plan
-3. If NO: Explain what's missing and suggest alternatives
-
-RESPONSE FORMAT (JSON only):
-{{
-  "status": "answerable" or "needs_clarification",
-  "analysis": {{
-    "intent": "brief description of what user wants",
-    "tables_needed": ["table1", "table2"],
-    "columns_needed": {{
-      "table1": ["col1", "col2"],
-      "table2": ["col3"]
-    }},
-    "operations": {{
-      "join": {{"type": "INNER JOIN", "from": "table1.col", "to": "table2.col"}},
-      "filter": {{"column": "col_name", "condition": "description"}},
-      "aggregation": {{"function": "SUM/COUNT/AVG", "column": "col_name", "alias": "alias"}},
-      "grouping": ["col1", "col2"],
-      "ordering": {{"column": "col_name", "direction": "ASC/DESC"}},
-      "limit": number_or_null
-    }},
-    "complexity": "simple/medium/complex"
-  }},
-  "clarification": "question for user if status is needs_clarification, otherwise null"
-}}
-
-RULES:
-- Return ONLY valid JSON, no explanations
-- Set status to "needs_clarification" if tables/columns are missing or query is ambiguous
-- Use exact table and column names from schema
-- Map business terms to actual column names (use business glossary)
-- For date ranges, specify exact conditions
-- If query mentions "recent" or relative time, convert to specific date logic
-
-Generate the JSON response:"""
+        # Substitute all variables into the cached template
+        prompt = self._prompt_template.format(
+            schema_context=schema_context,
+            history_section=history_section,
+            user_query=user_query
+        )
         
         return prompt
     

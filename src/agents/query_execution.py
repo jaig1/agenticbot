@@ -14,6 +14,7 @@ import os
 import sys
 import logging
 from typing import Dict, List, Any, Optional
+from pathlib import Path
 from dotenv import load_dotenv
 import vertexai
 from vertexai.generative_models import GenerativeModel
@@ -35,6 +36,9 @@ class QueryExecutionAgent:
     into a single service. It takes an execution plan from the Query Planner
     and returns raw results.
     """
+    
+    # Path to external prompt template
+    PROMPT_FILE = Path(__file__).parent.parent.parent / "prompt" / "query_execution_prompt.txt"
     
     def __init__(self):
         """
@@ -62,6 +66,10 @@ class QueryExecutionAgent:
         
         # Initialize Database Connector for execution
         self.db_connector = DatabaseConnector()
+        
+        # Validate and cache prompt template
+        self._validate_prompt_file()
+        self._prompt_template = self._load_prompt_template()
         
         logger.info(f"Query Execution Agent initialized - Model: {self.model_name}")
     
@@ -105,6 +113,30 @@ class QueryExecutionAgent:
             "metadata": db_metadata
         }
     
+    def _validate_prompt_file(self):
+        """
+        Validate that the prompt template file exists.
+        Fails fast at initialization if template is missing.
+        """
+        if not self.PROMPT_FILE.exists():
+            raise FileNotFoundError(
+                f"Prompt template not found: {self.PROMPT_FILE}\n"
+                f"Please ensure the prompt file exists in the correct location."
+            )
+    
+    def _load_prompt_template(self) -> str:
+        """
+        Load the SQL generation prompt template from file.
+        Called once at initialization and cached in memory.
+        
+        Returns:
+            Prompt template string with placeholders
+        """
+        try:
+            return self.PROMPT_FILE.read_text()
+        except Exception as e:
+            raise RuntimeError(f"Failed to load prompt template: {e}")
+    
     def _generate_sql(self, user_query: str, schema_context: str, execution_plan: Dict[str, Any]) -> Optional[str]:
         """
         Generate SQL from execution plan using Vertex AI.
@@ -119,42 +151,16 @@ class QueryExecutionAgent:
         """
         import json
         
-        # Extract plan details
-        intent = execution_plan.get("intent", "Unknown")
-        tables = execution_plan.get("tables_needed", [])
-        operations = execution_plan.get("operations", {})
+        # Format the cached prompt template with current values
+        dataset_reference = f"{self.project_id}.{self.dataset_id}"
+        execution_plan_str = json.dumps(execution_plan, indent=2)
         
-        # Build prompt
-        prompt = f"""You are an expert BigQuery SQL generator.
-
-SCHEMA:
-{schema_context}
-
-USER QUERY: "{user_query}"
-
-EXECUTION PLAN:
-Intent: {intent}
-Tables needed: {', '.join(tables) if tables else 'Not specified'}
-Operations: {json.dumps(operations, indent=2)}
-
-TASK:
-Generate a BigQuery SQL query that:
-1. Answers the user's question
-2. Follows the execution plan guidance
-3. Uses exact table and column names from the schema
-4. Uses proper BigQuery syntax
-5. Uses fully qualified table names: `{self.project_id}.{self.dataset_id}.table_name`
-
-RULES:
-- Return ONLY the SQL query, no explanations
-- Use proper BigQuery functions and syntax
-- Include appropriate JOINs if multiple tables needed
-- Add WHERE clauses for filtering
-- Use GROUP BY for aggregations
-- Add ORDER BY if ranking/sorting needed
-- Include LIMIT if specified
-
-Generate the SQL query:"""
+        prompt = self._prompt_template.format(
+            schema_context=schema_context,
+            user_query=user_query,
+            execution_plan=execution_plan_str,
+            dataset_reference=dataset_reference
+        )
         
         try:
             response = self.model.generate_content(prompt)
