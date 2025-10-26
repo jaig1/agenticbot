@@ -84,11 +84,8 @@ class DatabaseConnector:
         # Client will be created lazily
         self.client: Optional[bigquery.Client] = None
         
-        logger.info(
-            f"DatabaseConnector initialized for project: {self.project_id}, "
-            f"dataset: {self.dataset_id}"
-        )
-        logger.info("Using Application Default Credentials for authentication")
+
+        # Using Application Default Credentials (trimmed logging)
     
     def get_client(self) -> bigquery.Client:
         """
@@ -110,7 +107,7 @@ class DatabaseConnector:
         try:
             # Create client - ADC is used automatically
             self.client = bigquery.Client(project=self.project_id)
-            logger.info("BigQuery client created using Application Default Credentials")
+            # BigQuery client created (trimmed logging)
             return self.client
             
         except auth_exceptions.DefaultCredentialsError as e:
@@ -163,9 +160,6 @@ class DatabaseConnector:
             job_config = bigquery.QueryJobConfig()
             
             # Execute query
-            sql_preview = sql[:100] + "..." if len(sql) > 100 else sql
-            logger.info(f"Executing SQL query: {sql_preview}")
-            
             query_job = client.query(sql, job_config=job_config)
             
             # Wait for results with timeout

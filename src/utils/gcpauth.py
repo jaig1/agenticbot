@@ -72,6 +72,43 @@ class GCPAuthManager:
         except subprocess.TimeoutExpired:
             return None
 
+    def get_current_impersonation_setting(self) -> Optional[str]:
+        """Get current gcloud service account impersonation setting."""
+        try:
+            result = subprocess.run(['gcloud', 'config', 'get-value', 'auth/impersonate_service_account'],
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 and result.stdout.strip() and result.stdout.strip() != "(unset)":
+                return result.stdout.strip()
+            return None
+        except subprocess.TimeoutExpired:
+            return None
+
+    def get_adc_project_info(self) -> Dict[str, Any]:
+        """Get project information from ADC."""
+        info = {
+            'project_id': None,
+            'service_account': None,
+            'error': None
+        }
+        
+        try:
+            from google.auth import default
+            credentials, project = default()
+            info['project_id'] = project
+            
+            # Check if using service account impersonation
+            if hasattr(credentials, 'service_account_email'):
+                info['service_account'] = credentials.service_account_email
+            elif hasattr(credentials, '_service_account_email'):
+                info['service_account'] = credentials._service_account_email
+            elif hasattr(credentials, '_target_principal'):
+                info['service_account'] = credentials._target_principal
+                
+        except Exception as e:
+            info['error'] = str(e)
+            
+        return info
+
     def check_adc_status(self) -> Dict[str, Any]:
         """Check Application Default Credentials status."""
         status = {
@@ -208,10 +245,44 @@ class GCPAuthManager:
             '--impersonate-service-account', self.service_account
         ]
        
-        return self.run_gcloud_command(
+        success = self.run_gcloud_command(
             command,
             f"ADC setup with service account impersonation (browser will open)"
         )
+        
+        if success:
+            # After ADC setup, set the quota project to match our target project
+            self.set_adc_quota_project()
+        
+        return success
+
+    def set_adc_quota_project(self) -> bool:
+        """Set the quota project for ADC to match the target project."""
+        try:
+            print(f"🔧 Setting ADC quota project to: {self.project_id}")
+            result = subprocess.run(
+                ['gcloud', 'auth', 'application-default', 'set-quota-project', self.project_id],
+                capture_output=True, text=True, timeout=30
+            )
+            
+            if result.returncode == 0:
+                print(f"✅ ADC quota project set to {self.project_id}")
+                return True
+            else:
+                # This might fail for impersonated credentials, which is expected
+                if "not user credentials" in result.stderr:
+                    print(f"ℹ️  ADC quota project cannot be set for impersonated credentials (this is normal)")
+                    print(f"   ADC will use the target project from credentials: {self.project_id}")
+                else:
+                    print(f"⚠️  Could not set ADC quota project: {result.stderr}")
+                return True  # Don't fail the whole process for this
+                
+        except subprocess.CalledProcessError as e:
+            print(f"⚠️  Could not set ADC quota project: {e}")
+            return True  # Don't fail the whole process for this
+        except subprocess.TimeoutExpired:
+            print("⚠️  ADC quota project setting timed out")
+            return True  # Don't fail the whole process for this
 
     def revoke_all_auth(self) -> bool:
         """Revoke all existing authentication."""
@@ -263,7 +334,39 @@ class GCPAuthManager:
             print(f"✅ User authenticated as: {current_user}")
         else:
             print("⚠️  No active user authentication")
+        
+        # Check current impersonation setting
+        current_impersonation = self.get_current_impersonation_setting()
+        if current_impersonation:
+            if current_impersonation == self.service_account:
+                print(f"✅ gcloud impersonation set to: {current_impersonation}")
+            else:
+                print(f"⚠️  gcloud impersonation set to: {current_impersonation}")
+                print(f"   Target service account: {self.service_account}")
+        else:
+            print("⚠️  No gcloud service account impersonation configured")
+            print(f"   Target service account: {self.service_account}")
        
+        # Check ADC project information
+        adc_project_info = self.get_adc_project_info()
+        if adc_project_info['project_id']:
+            if adc_project_info['project_id'] == self.project_id:
+                print(f"✅ ADC default project: {adc_project_info['project_id']}")
+            else:
+                print(f"⚠️  ADC default project: {adc_project_info['project_id']}")
+                print(f"   Target project: {self.project_id}")
+                
+            if adc_project_info['service_account']:
+                if adc_project_info['service_account'] == self.service_account:
+                    print(f"✅ ADC service account: {adc_project_info['service_account']}")
+                else:
+                    print(f"⚠️  ADC service account: {adc_project_info['service_account']}")
+                    print(f"   Target service account: {self.service_account}")
+        elif adc_project_info['error']:
+            print(f"⚠️  ADC project info error: {adc_project_info['error']}")
+        else:
+            print("⚠️  No ADC project information available")
+        
         # Check ADC status
         adc_status = self.check_adc_status()
        

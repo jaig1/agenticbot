@@ -20,12 +20,27 @@ Responsibilities:
 """
 
 import os
+
+# Suppress gRPC and ALTS warnings before any Google Cloud imports
+os.environ["GRPC_VERBOSITY"] = "ERROR"
+os.environ["GLOG_minloglevel"] = "2"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
+import os
 import sys
 import json
 import logging
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 from enum import Enum
+
+# Add query logging capability
+try:
+    from src.utils.query_logger import get_query_logger
+    LOGGING_AVAILABLE = True
+except ImportError:
+    LOGGING_AVAILABLE = False
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -37,6 +52,7 @@ from vertexai.generative_models import GenerativeModel
 from src.agents.query_planner import QueryPlanningAgent
 from src.agents.query_execution import QueryExecutionAgent
 from src.agents.response_agent import ResponseAgent
+from src.agents.gcp_pricing_agent import GCPPricingAgent
 
 # Setup logging
 logging.basicConfig(
@@ -53,6 +69,7 @@ class OrchestrationAction(Enum):
     The orchestration LLM analyzes current context and chooses one of these actions
     to determine the next step in the workflow.
     """
+    CALL_PRICING_AGENT = "CALL_PRICING_AGENT"
     CALL_PLANNER = "CALL_PLANNER"
     ASK_CLARIFICATION = "ASK_CLARIFICATION"
     CALL_EXECUTOR = "CALL_EXECUTOR"
@@ -102,38 +119,23 @@ class SupervisorAgent:
         """
         load_dotenv()
         
-        logger.info("Initializing LLM-Driven Supervisor Agent...")
-        
         # Initialize Vertex AI
         project_id = os.getenv("GCP_PROJECT_ID")
         location = os.getenv("GCP_LOCATION", "us-central1")
         vertexai.init(project=project_id, location=location)
         
         # Load schema context from file
-        logger.info("Loading schema context...")
         self.static_context = self._load_schema_context()
         
-        # Calculate context statistics
-        context_chars = len(self.static_context)
-        estimated_tokens = context_chars // 4  # Rough estimate: 1 token ≈ 4 chars
-        logger.info(f"Static context ready: {context_chars} chars, ~{estimated_tokens} tokens")
-        
         # Initialize orchestration LLM (separate from agent LLMs)
-        logger.info(f"Initializing orchestration LLM: {orchestration_model}")
         self.orchestration_llm = GenerativeModel(orchestration_model)
         self.orchestration_model_name = orchestration_model
         
-        # Initialize Query Planning Agent (with LLM) - UNCHANGED
-        logger.info("Initializing Query Planning Agent (with LLM)...")
+        # Initialize agents
         self.planner = QueryPlanningAgent()
-        
-        # Initialize Query Execution Agent - UNCHANGED
-        logger.info("Initializing Query Execution Agent...")
         self.query_executor = QueryExecutionAgent()
-        
-        # Initialize Response Agent - UNCHANGED
-        logger.info("Initializing Response Agent...")
         self.response_agent = ResponseAgent()
+        self.pricing_agent = GCPPricingAgent()
         
         # Load orchestration prompt template
         self.orchestration_prompt_template = self._load_orchestration_prompt()
@@ -147,7 +149,8 @@ class SupervisorAgent:
         # Orchestration metrics
         self.orchestration_decisions = []  # Track all orchestration decisions for analysis
         
-        logger.info("LLM-Driven Supervisor Agent initialized successfully")
+        print("🚀 AgenticBot System Ready")
+        print(f"🔗 Connected to BigQuery ({project_id}.uqm)")
     
     def _load_schema_context(self) -> str:
         """
@@ -234,7 +237,6 @@ class SupervisorAgent:
         
         try:
             # Call orchestration LLM
-            logger.info(f"Requesting orchestration decision from {self.orchestration_model_name}")
             response = self.orchestration_llm.generate_content(orchestration_prompt)
             
             # Parse JSON response
@@ -252,10 +254,6 @@ class SupervisorAgent:
             # Validate decision structure
             if "action" not in decision:
                 raise ValueError("Decision missing 'action' field")
-            
-            # Log decision
-            logger.info(f"📋 Orchestration Decision: {decision['action']}")
-            logger.info(f"   Reason: {decision.get('reason', 'No reason provided')}")
             
             # Track decision for metrics
             self.orchestration_decisions.append({
@@ -310,10 +308,8 @@ class SupervisorAgent:
             Dict with: success, user_query, sql, results, formatted_response, metadata, orchestration_metrics
         """
         self.request_count += 1
-        logger.info(f"═══════════════════════════════════════════════════════════════════════════")
-        logger.info(f"[Request {self.request_count}] 🎯 Starting LLM-Driven Orchestration")
-        logger.info(f"[Request {self.request_count}] User query: {user_query}")
-        logger.info(f"═══════════════════════════════════════════════════════════════════════════")
+        time_str = datetime.now().strftime("%H:%M:%S")
+        print(f"[{time_str}] 🎯 Query: \"{user_query[:50]}{'...' if len(user_query) > 50 else ''}\"")
         
         # Reset orchestration metrics for this request
         self.orchestration_decisions = []
@@ -347,10 +343,7 @@ class SupervisorAgent:
         
         while not orchestration_context["completed"] and iteration < max_iterations:
             iteration += 1
-            logger.info(f"\n[Request {self.request_count}] ┌─ Orchestration Iteration {iteration}/{max_iterations} ─┐")
-            logger.info(f"[Request {self.request_count}] │ State: {orchestration_context['current_state']}")
-            logger.info(f"[Request {self.request_count}] │ Clarification Count: {orchestration_context['clarification_count']}/{self.max_clarification_rounds}")
-            logger.info(f"[Request {self.request_count}] └{'─' * 50}┘")
+            # Orchestration iteration (trimmed logging)
             
             # Ask orchestration LLM what to do next
             decision = self._get_orchestration_decision(orchestration_context)
@@ -363,18 +356,56 @@ class SupervisorAgent:
                 action = OrchestrationAction.GIVE_UP
                 decision["reason"] = f"Invalid action: {action_str}"
             
-            logger.info(f"[Request {self.request_count}] 🤖 LLM Decision: {action.value}")
-            logger.info(f"[Request {self.request_count}] 💭 Reasoning: {decision.get('reason', 'No reason provided')}")
+            # LLM decision made (trimmed logging)
+            
+            # Defensive check: Auto-complete terminal states to prevent infinite loops
+            if orchestration_context["current_state"] in ["PRICING_COMPLETE", "RESPONSE_COMPLETE"]:
+                if action != OrchestrationAction.COMPLETE:
+                    logger.warning(f"⚠️ [Request {self.request_count}] LLM chose {action.value} in terminal state {orchestration_context['current_state']} - forcing COMPLETE")
+                    orchestration_context["completed"] = True
+                    continue
             
             # Execute the chosen action
+            if action == OrchestrationAction.CALL_PRICING_AGENT:
+                # Safety check: Don't re-call if already done
+                if orchestration_context["current_state"] == "PRICING_COMPLETE":
+                    logger.warning(f"⚠️ [Request {self.request_count}] LLM chose CALL_PRICING_AGENT but pricing query already complete - forcing COMPLETE")
+                    # Force completion instead of infinite loop
+                    orchestration_context["completed"] = True
+                    continue
+                else:
+                    time_str = datetime.now().strftime("%H:%M:%S")
+                    print(f"[{time_str}] � Pricing analysis...")
+                    
+                    pricing_result = self.pricing_agent.handle_pricing_query(user_query)
+                    
+                    orchestration_context["results"]["pricing"] = pricing_result
+                    orchestration_context["current_state"] = "PRICING_COMPLETE"
+                    
+                    status = "✅ Success" if pricing_result.success else "❌ Failed"
+                    logger.info(f"[Request {self.request_count}] {status}: Pricing query complete")
+            
+            # Safety check: if LLM chose CALL_PLANNER but plan already complete with answerable status, force CALL_EXECUTOR instead
+            if action == OrchestrationAction.CALL_PLANNER and orchestration_context["current_state"] == "PLANNING_COMPLETE":
+                planning_result = orchestration_context["results"].get("planning", {})
+                if planning_result.get("status") == "answerable":
+                    logger.warning(f"[Request {self.request_count}] ⚠️ LLM chose CALL_PLANNER but plan already complete - forcing CALL_EXECUTOR")
+                    action = OrchestrationAction.CALL_EXECUTOR
+            
             if action == OrchestrationAction.CALL_PLANNER:
-                # Safety check: if we're in PLANNING_COMPLETE with answerable status, skip and let LLM choose next action
+                # Re-plan (e.g., after clarification where previous plan was not answerable)
                 if orchestration_context["current_state"] == "PLANNING_COMPLETE":
                     planning_result = orchestration_context["results"].get("planning", {})
-                    if planning_result.get("status") == "answerable":
-                        logger.warning(f"[Request {self.request_count}] ⚠️ LLM chose CALL_PLANNER but plan already complete - skipping")
-                        # Don't execute CALL_PLANNER, just continue to next iteration
-                        continue
+                    if planning_result.get("status") != "answerable":
+                        logger.info(f"[Request {self.request_count}] 📞 Re-calling Query Planning Agent (previous status: {planning_result.get('status')})")
+                        planning_result = self.planner.plan_query(
+                            user_query,
+                            self.static_context,
+                            orchestration_context["clarification_history"] if orchestration_context["clarification_history"] else None
+                        )
+                        orchestration_context["results"]["planning"] = planning_result
+                        orchestration_context["current_state"] = "PLANNING_COMPLETE"
+                        logger.info(f"[Request {self.request_count}] ✅ Planning complete: status={planning_result['status']}")
                     else:
                         # Re-plan (e.g., after clarification where previous plan was not answerable)
                         logger.info(f"[Request {self.request_count}] 📞 Re-calling Query Planning Agent (previous status: {planning_result.get('status')})")
@@ -388,7 +419,8 @@ class SupervisorAgent:
                         logger.info(f"[Request {self.request_count}] ✅ Planning complete: status={planning_result['status']}")
                 else:
                     # First time planning
-                    logger.info(f"[Request {self.request_count}] 📞 Calling Query Planning Agent...")
+                    time_str = datetime.now().strftime("%H:%M:%S")
+                    print(f"[{time_str}] � Planning query...")
                     planning_result = self.planner.plan_query(
                         user_query,
                         self.static_context,
@@ -396,7 +428,8 @@ class SupervisorAgent:
                     )
                     orchestration_context["results"]["planning"] = planning_result
                     orchestration_context["current_state"] = "PLANNING_COMPLETE"
-                    logger.info(f"[Request {self.request_count}] ✅ Planning complete: status={planning_result['status']}")
+                    time_str = datetime.now().strftime("%H:%M:%S")
+                    print(f"[{time_str}] 📋 Planning complete")
             
             elif action == OrchestrationAction.ASK_CLARIFICATION:
                 logger.info(f"[Request {self.request_count}] ❓ Asking for clarification...")
@@ -502,7 +535,8 @@ class SupervisorAgent:
                         logger.info(f"[Request {self.request_count}] {status}: Execution complete")
                 else:
                     # First time execution
-                    logger.info(f"[Request {self.request_count}] 📞 Calling Query Executor...")
+                    time_str = datetime.now().strftime("%H:%M:%S")
+                    print(f"[{time_str}] ⚡ Executing SQL...")
                     planning_result = orchestration_context["results"].get("planning", {})
                     execution_plan = planning_result.get("plan", {})
                     
@@ -525,7 +559,8 @@ class SupervisorAgent:
                     # Don't format again, just continue to next iteration
                     continue
                 else:
-                    logger.info(f"[Request {self.request_count}] 📞 Calling Response Agent...")
+                    time_str = datetime.now().strftime("%H:%M:%S")
+                    print(f"[{time_str}] � Formatting response...")
                     planning_result = orchestration_context["results"].get("planning", {})
                     execution_result = orchestration_context["results"].get("execution", {})
                     
@@ -540,8 +575,6 @@ class SupervisorAgent:
                     
                     orchestration_context["results"]["response"] = formatting_result
                     orchestration_context["current_state"] = "RESPONSE_COMPLETE"
-                    
-                    logger.info(f"[Request {self.request_count}] ✅ Response formatted successfully")
             
             elif action == OrchestrationAction.RETRY_PLANNING:
                 logger.info(f"[Request {self.request_count}] 🔄 Retrying planning with error context...")
@@ -644,43 +677,113 @@ class SupervisorAgent:
             
             return result
         
+        # Handle pricing query failures
+        pricing_result = orchestration_context["results"].get("pricing")
+        if pricing_result and not pricing_result.success:
+            logger.error(f"[Request {self.request_count}] ❌ Pricing query failed: {pricing_result.error_message}")
+            
+            result = {
+                "success": False,
+                "user_query": user_query,
+                "sql": None,
+                "results": None,
+                "response": pricing_result.formatted_response,
+                "formatted_response": None,
+                "metadata": pricing_result.metadata,
+                "orchestration_metrics": {
+                    "iterations": iteration,
+                    "decisions": self.orchestration_decisions,
+                    "final_action": "PRICING_QUERY_FAILED"
+                }
+            }
+            
+            # Store in conversation history
+            history_entry = {
+                "request_number": self.request_count,
+                "user_query": user_query,
+                "success": False,
+                "sql": None,
+                "response": result["response"],
+                "metadata": result["metadata"],
+                "orchestration_metrics": result["orchestration_metrics"]
+            }
+            self.conversation_history.append(history_entry)
+            
+            return result
+        
         # Build final successful result
         planning_result = orchestration_context["results"].get("planning", {})
         execution_result = orchestration_context["results"].get("execution", {})
         formatting_result = orchestration_context["results"].get("response", {})
+        pricing_result = orchestration_context["results"].get("pricing")
         
         # Clear clarification context if exists
         if clarification_key and clarification_key in self.clarification_context:
             del self.clarification_context[clarification_key]
         
-        result = {
-            "success": True,
-            "user_query": user_query,
-            "sql": execution_result.get("sql"),
-            "results": execution_result.get("results"),
-            "response": formatting_result.get("formatted_response"),
-            "display_data": formatting_result,
-            "metadata": execution_result.get("metadata", {}),
-            "orchestration_metrics": {
-                "iterations": iteration,
-                "decisions": self.orchestration_decisions,
-                "final_action": OrchestrationAction.COMPLETE.value
+        # Handle pricing query results
+        if pricing_result:
+            result = {
+                "success": pricing_result.success,
+                "user_query": user_query,
+                "sql": None,  # Pricing queries don't generate SQL
+                "results": pricing_result.data,
+                "response": pricing_result.formatted_response,
+                "display_data": {
+                    "formatted_response": pricing_result.formatted_response,
+                    "pricing_data": pricing_result.data,
+                    "query_type": pricing_result.metadata.get("query_type"),
+                    "agent": pricing_result.metadata.get("agent")
+                },
+                "metadata": pricing_result.metadata,
+                "orchestration_metrics": {
+                    "iterations": iteration,
+                    "decisions": self.orchestration_decisions,
+                    "final_action": OrchestrationAction.COMPLETE.value
+                }
             }
-        }
+        else:
+            # Handle SQL query results
+            result = {
+                "success": True,
+                "user_query": user_query,
+                "sql": execution_result.get("sql"),
+                "results": execution_result.get("results"),
+                "response": formatting_result.get("formatted_response"),
+                "display_data": formatting_result,
+                "metadata": execution_result.get("metadata", {}),
+                "orchestration_metrics": {
+                    "iterations": iteration,
+                    "decisions": self.orchestration_decisions,
+                    "final_action": OrchestrationAction.COMPLETE.value
+                }
+            }
         
-        logger.info(f"[Request {self.request_count}] ✅ Success - {formatting_result.get('row_count', 0)} rows in {formatting_result.get('execution_time', 'N/A')}")
-        logger.info(f"[Request {self.request_count}] 📊 Orchestration: {iteration} iterations, {len(self.orchestration_decisions)} decisions")
+        # Log final success message
+        time_str = datetime.now().strftime("%H:%M:%S")
+        if pricing_result:
+            print(f"[{time_str}] ✅ Cost estimate sent")
+        else:
+            row_count = formatting_result.get('row_count', 0)
+            exec_time = formatting_result.get('execution_time', 'N/A')
+            if isinstance(exec_time, str) and 's' in exec_time:
+                exec_time_display = exec_time
+            else:
+                exec_time_display = f"{float(exec_time):.1f}s" if exec_time != 'N/A' else 'N/A'
+            print(f"[{time_str}] 📊 Results: {row_count:,} rows ({exec_time_display})")
+            time_str = datetime.now().strftime("%H:%M:%S")
+            print(f"[{time_str}] ✅ Response sent")
         
         # Store in conversation history
         history_entry = {
             "request_number": self.request_count,
             "user_query": user_query,
-            "success": True,
+            "success": result["success"],
             "sql": result["sql"],
             "response": result["response"],
-            "display_data": formatting_result,
+            "display_data": result["display_data"],
             "metadata": result["metadata"],
-            "execution_plan": planning_result.get("plan"),
+            "execution_plan": planning_result.get("plan") if not pricing_result else None,
             "orchestration_metrics": result["orchestration_metrics"]
         }
         self.conversation_history.append(history_entry)
@@ -773,6 +876,8 @@ class SupervisorAgent:
         test_queries = [
             "How many insurance customers are there?",
             "What is the total claim amount?",
+            "How much does 3 million Gemini input tokens cost?",  # Pricing query
+            "What is the cost for 1000 Cloud Functions invocations?",  # Pricing query
             "Show me employee salary data",  # Should need clarification
         ]
         

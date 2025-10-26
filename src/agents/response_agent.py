@@ -67,7 +67,7 @@ class ResponseAgent:
         self._validate_prompt_file()
         self._prompt_template = self._load_prompt_template()
         
-        logger.info("Response Agent initialized")
+        # Response Agent initialized (trimmed logging)
     
     def format_response(
         self, 
@@ -106,8 +106,6 @@ class ResponseAgent:
             - confidence_score: Planning confidence (if available)
             - results_data: Raw query results for tabular display
         """
-        logger.info(f"Formatting response for: {user_query}")
-        
         # Extract plan details
         intent = execution_plan.get("intent", "Unknown query type")
         tables_needed = execution_plan.get("tables_needed", [])
@@ -116,6 +114,8 @@ class ResponseAgent:
         
         # Format execution details
         exec_time = metadata.get('execution_time_seconds', 0)
+        # Handle None results
+        results = results or []
         row_count = metadata.get('row_count', len(results))
         bytes_processed = metadata.get('bytes_processed', 0)
         
@@ -214,7 +214,6 @@ class ResponseAgent:
             response = self.model.generate_content(prompt)
             formatted = response.text.strip()
             
-            logger.info(f"Response formatted: {len(formatted)} chars")
             return formatted
             
         except Exception as e:
@@ -235,6 +234,8 @@ class ResponseAgent:
         Returns:
             Basic formatted response
         """
+        # Handle None results
+        results = results or []
         row_count = metadata.get('row_count', len(results))
         
         # Single value result
@@ -268,6 +269,8 @@ class ResponseAgent:
         Returns:
             Brief summary string
         """
+        # Handle None results
+        results = results or []
         row_count = metadata.get('row_count', len(results))
         
         if row_count == 0:

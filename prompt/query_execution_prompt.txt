@@ -23,6 +23,6 @@ RULES:
 - Add WHERE clauses for filtering
 - Use GROUP BY for aggregations
 - Add ORDER BY if ranking/sorting needed
-- Include LIMIT if specified
+- **ALWAYS include LIMIT 10 at the end of every query** (to prevent token overflow from large result sets)
 
 Generate the SQL query:

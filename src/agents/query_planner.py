@@ -76,7 +76,7 @@ class QueryPlanningAgent:
         self._validate_prompt_file()
         self._prompt_template = self._load_prompt_template()
         
-        logger.info(f"Query Planning Agent initialized with Vertex AI - Model: {self.model_name}")
+        # Query Planning Agent initialized (trimmed logging)
     
     def _validate_prompt_file(self) -> None:
         """Validate that prompt file exists at startup"""
@@ -109,11 +109,6 @@ class QueryPlanningAgent:
             - plan: detailed execution plan (if answerable)
             - clarification_question: question for user (if needs clarification)
         """
-        if clarification_history:
-            logger.info(f"Planning query with {len(clarification_history)} clarification(s): {user_query}")
-        else:
-            logger.info(f"Planning query with LLM: {user_query}")
-        
         # Build prompt for LLM
         prompt = self._build_planning_prompt(user_query, schema_context, clarification_history)
         
@@ -125,10 +120,7 @@ class QueryPlanningAgent:
             # Parse JSON response
             plan_data = self._parse_llm_response(plan_text)
             
-            if plan_data["status"] == "answerable":
-                logger.info(f"Query is answerable. Tables: {plan_data['analysis']['tables_needed']}")
-            else:
-                logger.warning(f"Query needs clarification: {plan_data['clarification'][:100]}")
+            # Plan generated successfully
             
             return {
                 "status": plan_data["status"],

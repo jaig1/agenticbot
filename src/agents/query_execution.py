@@ -71,7 +71,7 @@ class QueryExecutionAgent:
         self._validate_prompt_file()
         self._prompt_template = self._load_prompt_template()
         
-        logger.info(f"Query Execution Agent initialized - Model: {self.model_name}")
+        # Query Execution Agent initialized (trimmed logging)
     
     def execute_query(self, user_query: str, schema_context: str, execution_plan: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -85,8 +85,6 @@ class QueryExecutionAgent:
         Returns:
             Dict with: success, user_query, sql, results, metadata
         """
-        logger.info(f"Processing query: {user_query}")
-        
         # Step 1: Generate SQL
         sql = self._generate_sql(user_query, schema_context, execution_plan)
         
@@ -98,8 +96,6 @@ class QueryExecutionAgent:
                 "results": None,
                 "metadata": {"error": "SQL generation failed"}
             }
-        
-        logger.info(f"SQL generated: {sql[:200]}...")
         
         # Step 2: Execute SQL
         results, db_metadata = self.db_connector.execute_query(sql)
