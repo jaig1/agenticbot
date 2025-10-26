@@ -3,7 +3,7 @@ name = "agenticbot"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "google-auth>=2.41.1",
     "google-cloud-aiplatform>=1.121.0",
