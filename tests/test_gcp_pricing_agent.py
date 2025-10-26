@@ -1,6 +1,7 @@
 """
 Test suite for GCP Pricing Agent
 Tests the agent's ability to answer various pricing questions and perform function calls.
+Uses API Key authentication for Google Cloud Billing API access.
 """
 
 import pytest
@@ -36,12 +37,15 @@ class TestGCPPricingAgent:
         assert agent.model_name is not None
         assert agent.tools_instance is not None
         assert hasattr(agent.tools_instance, 'use_adc')
+        assert hasattr(agent.tools_instance, 'api_key')
         print(f"✅ Agent initialized with project: {agent.project_id}")
+        print(f"✅ Authentication method: {'API Key' if not agent.tools_instance.use_adc else 'ADC'}")
     
     def test_tools_authentication(self, agent):
         """Test that tools are using proper authentication"""
-        assert agent.tools_instance.use_adc == True, "Should be using Application Default Credentials"
-        print("✅ Tools configured to use ADC")
+        assert agent.tools_instance.use_adc == False, "Should be using API Key authentication"
+        assert agent.tools_instance.api_key is not None, "API key should be configured"
+        print("✅ Tools configured to use API Key authentication")
     
     def test_service_search_functionality(self, agent):
         """Test the service search functionality directly"""
